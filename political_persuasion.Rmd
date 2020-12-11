@@ -1,0 +1,422 @@
+---
+title: "Političko Nagovaranje (*Eng. Political Persuasion*)"
+author: "Anton Ilić, Arijan Jašarević"
+date: '11.12.2020 '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Uvod
+
+Problem opisan u ovom projektu se odnosi na korištenje strojnog u svrhu efikasnog iskorištavanja resursa za vrijeme političkih izbornih kampanja. 
+
+Opće je poznato da političke kampanje nisu utjecajne na mišljenje pojedinaca, već služe za motiviranje istomišljenika da izađu glasati informiranjem i podsjećanjem. Za dolazak do istomišljenika postoje razne metode, a one se odnose na usmjeravanje dostupnih resursa prema:
+
+* **Geografskoj osnovi**
+    * Država, regija, grad,...
+* **Demografskoj osnovi**
+    * Dobna skupina, etnička skupina,...
+* **Individualnoj**
+    * Ankete, telefonski razgovori,...
+
+Svaka od navedenih metoda ima svoje prednosti i nedostatke, ali u svakoj se postavlja pitanje kako na najefikasniji način resurse usmjeriti prema "ciljanoj" publici. Naprimjer, ukoliko se resursi troše na poznate glasače vlastite stranke onda su to bačeni resursi ili ukoliko dopiremo do glasača suparničke stranke to može biti loše, pa čak i štetno.
+
+Radi takvih izbjegavanja situacija moguće je koristiti metode za procjenu utjecaja pojedinih čimbenika na konačni ishod iz dostupnih skupova podataka uz korištenje prije navedenih tradicionalnih metoda. Naprimjer, može se promatrati utjecaj slanja promotivnog e-maila ili letka te izmjeriti ishod utjecaja na glasače koji su primili letak i onih koji ga nisu primili. Pritim je cilj pronaći novu nepoznatu bazu glasača te resurse usmjeriti k njima.
+
+Konkretno, ovaj projekt predlaže rješavanje problema metodom uzdizanja (**Uplift method**).
+
+## Zadatak
+
+Metoda uzdizanja (**Uplift method**) je metodologija implementirana u strojno učenje čiji je cilj odrediti utjecaj pojedinih varijabli na poželjni, odnosno nepoželjni ishod nekog procesa. Služi kao podrška odlučivanju u situacijama u kojima je potrebno uključivati ili isključivati varijable u svrhu boljeg raspolaganja resursima.
+
+Uplift metoda funkcionira na principu četiri kvadranta:
+
+
+![](https://miro.medium.com/max/792/1*MABqD0pMXxd-giiHvZua_Q.png)
+
+Na primjeru političkog nagovaranja:
+
+* **Prvi kvadrant** - Skupina ljudi koja će glasati neovisno o kontaktiranju
+* **Drugi kvadrant** - Skupina ljudi koju je moguće nagovoriti
+* **Treći kvadrant** - Skupina ljudi koja neće glasati
+* **Četvrti kvadrant** - Skupina ljudi koja sigurno neće glasati
+
+Cilj je odrediti odrediti skupinu iz drugog kvadranta korištenjem varijabli iz dostupnog skupa podataka. Na našem primjeru je to skupina ljudi koja će izaći glasati za Demokrate *samo ako* budu izloženi reklami.
+
+## Skup podataka
+
+U projektu je korišten skup podataka *Voter-Persuasion.csv*. Radi se o objedinjenim transparentnim javnim podacima o glasačima iz registra birača Sjedinjenih Američkih Država. Ti su podaci u konačnom skupu objedinjeni s podacima prikupljenim u anketi. 
+
+Skup podataka, odnosno uzorak se sastoji od **10 000** redaka koji opisuju **79** stupaca. Ti stupci sadrže demografske, etničke, socijalne i antropološke podatke o glasačima kao što su identifikacijski broj, podaci o političkoj aktivnosti, broju ukućana i bračnom statusu, sredini u kojoj žive. 
+
+U analizu su u razmatranje oni podaci čiji je opis (meta podatak) bio dostupan u literaturi ili razumljiv iz konteksta. Prikaz tih podataka se nalazi u nastavku:
+
+### Pregled podataka
+
+VARIJABLA | OPIS VARIJABLE | TIP VARIJABLE
+--- | --- | --- |
+**AGE** | Dob glasača | INTEGER
+**NH_WHITE** | Postotak bijelaca u susjedstvu glasača koji ne uključuje latince | INTEGER %
+**NH_AA** | Postotak afroamerikanaca u susjedstvu glasača | INTEGER %
+**NH_HISP** | Postotak bijelaca hispanijskog podrijetla u susjedstvu glasača | INTEGER %
+**COMM_PT** | Postotak radnika koji koriste javni gradski prijevoz | INTEGER %
+**REG_DAYS** | Broj dana koliko je glasač prijavljen na trenutnoj adresi | INTEGER
+**PR_PELIG** | Postotak izlaznosti na nepredsjednička glasanja od trenutka stjecanja prava | INTEGER %
+**E_PELIG** | Postotak izlaznosti na sva glasanja od trenutka stjecanja prava | INTEGER %
+**RELIGIOUSC** | Radi li se o religioznom kućanstvu | BINARNA VARIJABLA (1 / 0)
+**POLITICALC** | Postoji li politički aktivna osoba u kućanstvu | BINARNA VARIJABLA (1 / 0)
+**MOVED_A** | Binarna varijabla  koja označava je li mišljenje pomaknuto u korist Demokrata | BINARNA VARIJABLA (1 / 0)
+**MESSAGE_A** | Je li glasač primio poruku | BINARNA VARIJABLA (1 / 0)
+
+
+<br>Učitavanjem *Voter_Persuasion.csv* skupa podataka možemo vidjeti cjelokupnu strukturu.
+
+```{r data}
+voter_df <- read.csv('Voter-Persuasion.csv')
+str(voter_df)
+```
+
+Postotak glasača određen ciljnom varijablom (**MOVED_A**) koji su u konačnici prešli u korist Demokrata. 
+
+```{r percetange, echo=FALSE ,message=FALSE}
+#install.packages('dplyr')
+#install.packages('plyr')
+#install.packages('readr')
+library(readr)
+library(dplyr)
+library(plyr)
+
+moved_ad_true <- length(which(voter_df$MOVED_AD == 'Y'))
+percentage <- (moved_ad_true / length(voter_df$MOVED_AD)) * 100
+percentage 
+```
+Odnos broja glasača koji su primili poruku i koji nisu primili poruku. Pritom 0 označava izostanak, dok 1 označava primitak. Iz rezultata je vidljivo da je veći broj glasača za Demokrate primio letak.
+
+Cilj uzdizanja je izmjeriti koliko povećanje uzrokuje primitak poruke.
+
+```
+  # MESSAGE_A    n
+# 1         0 1722
+# 2         1 2012
+```
+
+U nastavku slijedi izoliranje stupaca (podataka) koji su relevantni za ovu temu. Stupci su određeni proizvoljnim pregledom dostupnih meta podataka o stupcima promatranog skupa u odnosu na ciljnu varijablu **MOVED_A**.
+
+```{r message = FALSE}
+
+#install.packages('ggcorrplot')
+library(ggcorrplot)
+
+#Dohvaćanje stupaca
+cordata = voter_df[,c(4, 9, 10, 13, 19, 31, 45, 48, 53, 66, 67, 71, 77)]
+
+cor_result = cor(cordata)
+cor_result[,'MOVED_A']
+```
+
+### Grafički prikaz korelacije
+
+U nastavku slijedi i stupčasti graf koji prikazuje korelacije s varijablom MOVED_A. Iz grafa je vidljivo da varijable **AGE**, **NH_WHITE** i **REG_DAYS** imaju negativnu korelaciju zbog čega će u daljnjim modelima imati pridodan manji značaj.
+
+Zanimljivo je da varijabla **NH_WHITE** za razliku od **NH_AA** i **HISP** poprima negativnu vrijednost jer se tri svode na podatak o rasi. Dakle, na prvu ruku bi se da zaključiti da manjinski kvartovi glasaju za Demokrate više nego bjelački kvartovi, što zbog opće poznatih stavova Republikanaca ima smisla.
+
+```{r echo=FALSE, message = FALSE}
+
+barplot(cor_result[,'MOVED_A'],
+        col = '#FF0000',
+        las = 2,
+        cex.names = 0.8,
+        main = 'Korelacije varijabli u odnosu na MOVED_A')
+```
+
+<br>Dalje slijedi i prikaz vizualizacije matrice korelacije iz paketa *corrplot*. Toplije boje označavaju veći stupanj negativne korelacije, dok hladnije boje označavaju veći stupanj pozitivne korelacije.
+
+Neke od vidljivih korelacija relevantnih za temu su:
+
+* **PARTY_D** - **MOVED_A** 
+  * Veliki dio opredjeljenih Demokrata je dobio poruku stranke
+  * **PARTY_D** također korelira s **PELIG** vrijednostima
+* **REG_DAYS** - **E_PELIG**
+  * Veći broj dana registriran na adresi jamči i veći postotak izlaznosti na izbore
+  * To vrijedi za sve PELIG stupce koji se odnose na izlaznost na izbore
+* **RELIGIOUSC** i **POLITICALC**
+  * Također postoji velika korelacija
+
+```{r echo=FALSE, message = FALSE}
+
+#install.packages('corrplot')
+library(corrplot)
+
+corrplot(cor_result, 
+         type='upper', 
+         order='hclust',
+         sub = 'Matrica korelacije u odnosu na MOVED_A')
+
+```
+
+## Postavljanje modela
+
+Za demostraciju modela koristiti će se neke osnovne funkcije iz paketa *uplift*. Radi se o modelima direktnog uzdizanja koji su implementirani jezikom R. Takvi nam modeli omogućuju prikaz individualnog uzdizanja primjenjenog na svakom invividualnom retku.
+
+Funkcije koje se koriste su:
+
+* **upliftRF()** 
+  * Implementira algoritam slučajnih šuma specijaliziran za modeliranje binarnog modela uzdizanja
+  
+* **ccif()**
+  * Implementira algoritma slučajnih šuma koji koristi rekurzivno particioniranje
+
+### Stvaranje skupova za treniranje i testiranje
+
+Radi mogućnosti dobivanja istih podataka postavljen je *set.seed()*. Podaci su raspoređeni u skupove za treniranje i testiranje u omjeru **70:30**.
+
+```{r message = FALSE}
+
+set.seed(123)  
+train_index <- sample(c(1:dim(voter_df)[1]), dim(voter_df)[1]*0.7)  
+train_df <- voter_df[train_index, ]
+valid_df <- voter_df[-train_index, ]
+
+```
+### Prvi model - Random Forest
+ 
+Algoritam za particioniranje koristi klasičan način rada slučajnih šuma. Odnosno gradi stabla odluke ovisno o predefiniranom broju stabala i uzoraka s ponavljanjem. Grananjem se određuje koji atribut i gradi grana koja će pružati najveću informacijsku dobit.
+
+Cilj je odrediti povećanje vjerojatnosti da će glasač prijeći u korist Demokratima (**MOVED_A**) ukoliko je izložen poruci (**MESSAGE_A**).
+Poruka je spremljena u u formu *trt()* koja prima binarnu varijablu u odnosu na koju se promatra ciljna varijabla.
+
+* Za **prediktore** su iskorišteni svi prediktori koji pozitivno koreliraju, bez posebnih selekcija
+* **mtry** - označava broj varijabli u svakom čvoru, postavljen na 4
+* **ntree** - broj stabala postavljen na 150
+* **split_method** - Metoda razdvajanja je postavljena na Kullback-Leiblerovu divirgenciju
+* **minsplit** - - Potreban broj opažanja u čvoru potreban za razdvajanje
+* **verbose** - postavljen na FALSE, ne želimo poruke o izvršavanju
+
+
+``` {r ,message=FALSE}
+#install.packages('uplift')
+library(uplift)
+
+#Radi se uplift na skupu za treniranje, ciljana varijabla MOVED_AD_NUM
+uplift_rf_one <- upliftRF(MOVED_A ~ NH_AA + HISP + COMM_PT + PARTY_D + PR_PELIG +
+                          E_PELIG + RELIGIOUSC + POLITICALC + trt(MESSAGE_A),
+                     data = train_df, 
+                     mtry = 4, 
+                     ntree = 150, 
+                     split_method = 'KL',
+                     minsplit = 200, 
+                     verbose = FALSE)
+
+
+varImportance(uplift_rf_one, plotit = FALSE, normalize = TRUE)
+
+
+```
+
+Iznad je prikazana metirka važnosti varijabli na prvom modelu. Vidljivo je da najveću korelaciju uzrokuju povijest izlaznosti na sve izbore (**E_PELIG**), postotak afroamerikanaca u susjedstvu (**NH_AA**) te postotak hispanaca u susjedstvu ((**HISP**)), te redom korištenje javnog prijevoza (**COMM_PT**), *itd*.
+
+#### Validacija prvog modela
+
+Dalje je potrebno napraviti predikciju nad skupom za validaciju. U nastavku je vidljivo kako izgleda nastala predikcija za stanje kada je poruka (**MESSAGE_A**) jednaka 1 te kada je jednaka 0.
+
+``` {r}
+pred_rf_one <- predict(uplift_rf_one, newdata = valid_df)
+head(pred_rf_one)
+
+```
+
+Rezultat se sprema u varijablu *result_rf_one*, a čini ga razlika između pozitivnih i negativnih dobivenih koeficijenata uzdizanja. Prikaz u nastavku daje na uvid broj pozitivnih i negativnih vrijednosti uzdizanja. U razmatranje se uzimaju samo pozitivne vrijednosti, ostale se odbacuju. 
+
+Prikazan je rezultat dobiven korištenjem svih pozitivnih prediktorskih varijabli, te on iznosi **2579** pozitivnih uzdizanja te **421** negativnih uzdizanja. Budući da se većem broju prediktora model stvara puno manje eliminacija, što će biti korektirano u sljedećem primjeru.
+
+```{r}
+result_rf_one =  pred_rf_one[,1] - pred_rf_one[,2]
+count(sign(result_rf_one))
+```
+
+Prosječne vrijednosti uzdizanja su vidljive u nastavku:
+
+```{r echo=FALSE}
+summary(result_rf_one)
+```
+
+### Drugi model - Random Forest
+ 
+Slijedi još jedan nešto više optimiziran algoritam slučajnih šuma. Pritom su izbačeni sljedeći stupci:
+
+* **PARTY_D** - Označava pripadnost stranci Demokrata. Pretpostavlja se da će ta skupina izaći neovisno o primitku letka
+* **POLITICALC** - Označava politički aktivnu osobu u kućanstvu. Pretpostavka je da njima također ne treba poruka stranke, već će to obaviti taj član obitelji.
+* **RELIGIOUSC** - Ovaj stupac usko korelira s **POLITICALC** stupcem, zbog čega se pretpostavlja da će negativno utjecati na rezultate
+
+Također, u model se kreće s prepostavkom da valja ciljati na ljude koji imaju povijest izlaznosti na izbore, zbog toga su ostavljene **PELIG** varijable. 
+
+Budući da je matrica korelacije pokazala veći interes za Demokrate kod afroamerikanaca i hispanaca, ostavljene su i varijable **NH_AA** i **HISP**. Također, matrica je pokazala i veći postotak korištenja javnog prijevoza među tim skupinama.
+
+``` {r ,message=FALSE}
+#install.packages('uplift')
+library(uplift)
+
+#Radi se uplift na skupu za treniranje, ciljana varijabla MOVED_AD_NUM
+uplift_rf_two <- upliftRF(MOVED_A ~ NH_AA + HISP + COMM_PT + PR_PELIG +
+                          E_PELIG + POLITICALC + trt(MESSAGE_A),
+                     data = train_df, 
+                     mtry = 4, 
+                     ntree = 150, 
+                     split_method = 'KL',
+                     minsplit = 200, 
+                     verbose = FALSE)
+
+
+varImportance(uplift_rf_two, plotit = FALSE, normalize = TRUE)
+
+
+```
+Korištenjem *varImportance()* funkcije dobivamo da najveći utjecaj redom imaju **NH_AA**, **E_PELIG**, **HISP**, **COMM_PT** pa **PR_PELIG**. 
+
+#### Validacija drugog modela
+
+Ponovno radimo predikciju na skupu za validiranje.
+
+``` {r}
+
+pred_rf_two <- predict(uplift_rf_two, newdata = valid_df)
+
+```
+
+U ovom slučaju vidimo nešto veći broj negativnih vrijednosti, što je i logično, budući da smo isključili veći broj glasača.
+
+```{r}
+
+result_rf_two =  pred_rf_two[,1] - pred_rf_two[,2]
+count(sign(result_rf_two))
+
+```
+
+Statistički pregled rezultata predikcije:
+
+```{r echo=FALSE}
+
+summary(result_rf_two)
+
+```
+
+### Treći model - CCIF *(Casual Conditional Inference Forest)*
+
+Algoritam funkcionira na način da rekurzivno ponavlja korake uspoređivanja interakcije između *trt()* varijable koja je u našem slučaju message i ostalih varijabli u odnosu na konačnu ciljnu varijablu pritom tražeći najvažniju varijable za korelaciju.
+
+Pri aproksimaciji koristimo iste varijable radi usporedbe s drugim modelom upliftRF. Valja napomenuti da je pritom opis parametara ostao isti, a radi se o drugoj funkciji, uz razliku korištene metode razdvajanja i nešto manjeg broja stabala. 
+
+Mijenjanjem parametra koji određuje broj stabala postignut je nešto bolji rezultat kod manjeg broja stabala.
+
+``` {r}
+
+uplift_ccif <- ccif(MOVED_A ~ NH_AA + HISP + COMM_PT + PR_PELIG +
+                          E_PELIG + trt(MESSAGE_A),
+                     data = train_df, 
+                     mtry = 3, 
+                     ntree = 100, 
+                     split_method = 'ED',
+                     minsplit = 250, 
+                     verbose = FALSE)
+
+varImportance(uplift_ccif, plotit = FALSE, normalize = TRUE)
+
+```
+
+#### Validacija trećeg modela
+
+Ponovno radimo predikciju nad skupom za validiranje.
+
+``` {r}
+pred_ccif_one <- predict(uplift_ccif, newdata = valid_df)
+
+```
+
+Rezultati prikazuju previše mali broj negativnih uzdizanja iz čega se da zaključiti da ovaj model nije dobar te da će veći resursi biti usmjereni prema krivim skupinama ljudi.
+
+```{r}
+
+result_ccif =  pred_ccif_one[,1] - pred_ccif_one[,2]
+count(sign(result_ccif))
+
+```
+
+Statistički pregled dobivenih rezultata:
+
+``` {r echo=FALSE}
+summary(result_ccif)
+
+```
+
+
+### Pregled rezultata
+
+* **Prvi model** (Random Forest) je služio kao školski primjer implementacije metode uzdizanja, korišten je za otkrivanje kako se parametri ponašaju te kao suprotni primjer drugom modelu.
+* **Drugi model** (Random Forest) je uz selekciju prediktora eliminirao najviše glasača zbog čega možemo zaključiti da je on najbolji model.
+* **Treći model** (CCIF) je postigao najlošije rezultate iako koristi iste prediktore kao i drugi model.
+
+```{r echo=FALSE}
+
+positive_rf_one <- result_rf_one[which(result_rf_one > 0)]
+positive_rf_two <- result_rf_two[which(result_rf_two > 0)]
+positive_ccif <- result_ccif[which(result_ccif > 0)]
+
+
+pos_md1 <- length(positive_rf_one)
+pos_md2 <- length(positive_rf_two)
+pos_md3 <- length(positive_ccif)
+
+#lens <- table(len_md1,len_md2,len_md3)
+
+len_df <- data.frame(pos_md1, pos_md2, pos_md3)
+
+barplot(as.matrix(len_df),
+         ylim = c(1,3000),
+        main = 'Usporedba broja pozitivnih uzdizanja za 3 modela:',
+        col= rainbow(3))
+
+```
+
+U nastavku je numerički i grafički prikazana i prosječna vrijednost pozitivnih uplifta. Drugi model ponovno prikazuje najveći postotak uplifta od **7.16%**. Za njim slijedi prvi model sa **6.69%** te treći model s **5.36%**.
+
+```{r echo=FALSE}
+
+mean_df <- data.frame(mean(positive_rf_one), mean(positive_rf_two), mean(positive_ccif))
+mean_df*100
+```
+
+Grafički prikaz prošlih rezultata:
+
+```{r echo=FALSE}
+
+barplot(as.matrix(mean_df*100),
+         ylim = c(0,20),
+        main = 'Prosjecna vrijednost pozitivnih uplifta po modelima (%):',
+        col= rainbow(3))
+```
+
+## Zaključak
+
+Kroz projekt su prikazane neke osnove modeliranja metodom uzdizanja na konkretnom primjeru. Objašnjen je način rada i prikazan je postupak određivanja korelacija s ciljnom varijablom te pregled rezultata razvijenih u modelima upliftRF i CCIF. Pritom je utvrđeno da najbolje rezultate daje drugi model, odnosno model slučajnih šuma. On radi na umjerenijem i manje agresivnom načinu rada za razliku od rekurzije pa pruža bolje rezultate, iako su parametri gotovo isti. 
+
+Veliki problem u ovakvim projektima predstavlja eksperimentalna priroda ovih metoda, što je i napomenuto u dokumentaciji. Još jedan problem koji ovu analizu otežava je brzina izvođenja. Modeli su izrađeni s manjim brojem iteracija radi brzine izvođenja koja u ovom slučaju nije predstavljala ključni značaj, ali može predstavljati velike probleme pri analizi većih baza podataka.
+
+Projekt pruža brojne mogućnosti proširenja. Neka od tih proširenja su kategorizacija stupaca i uvođenje više varijabli u model (Skup ih ima 79). Nove varijable je također moguće izvesti iz postojećih što bi pružalo zanimljive uvide u podatke.
+
+## Literatura
+
+https://towardsdatascience.com/a-quick-uplift-modeling-introduction-6e14de32bfe0
+
+https://rdrr.io/cran/uplift/man/upliftRF.html
+
+https://www.rdocumentation.org/packages/uplift/versions/0.3.5/topics/ccif
+
+
+
+
+
+
+
